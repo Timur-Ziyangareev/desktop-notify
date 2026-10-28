@@ -21,6 +21,11 @@ stays in the Action Center. Clicking it brings the window forward. The sound is
 synthesized in the page with WebAudio: no audio files, and the cue is audible
 even when Windows notification sounds are turned off.
 
+The composer row carries one control for it: a speaker between the attach button
+and the permission chip (`Full access` and friends sit to its right). A click
+mutes the cue — the waves beside the speaker disappear and the speaker is struck
+through — and a second click brings both back. Toasts keep coming while muted.
+
 The agent never learns about this: nothing is registered model-facing, and the
 plugin adds no tokens to a request.
 
@@ -54,7 +59,7 @@ notification is due.
 | Key | Default | Meaning |
 |---|---|---|
 | `dsh-notify.enabled` | `1` | Master switch for toasts and sound |
-| `dsh-notify.sound` | `1` | The WebAudio cue |
+| `dsh-notify.sound` | `1` | The WebAudio cue; the composer speaker writes this key |
 | `dsh-notify.volume` | `2` | Requested level, `0`…`2`; above `1` the cue is soft-limited instead of digitally clipped |
 | `dsh-notify.subagents` | `0` | Also announce subagent sessions |
 | `dsh-notify.inApp` | `1` | In-page card when the OS toast is unavailable |
@@ -115,6 +120,12 @@ node test/run.mjs
 Уведомление — настоящее системное (всплывает поверх окон, остаётся в центре
 уведомлений Windows), по клику окно выходит вперёд. Звук синтезируется прямо в
 странице, поэтому не зависит от настроек звуков уведомлений Windows.
+
+В строке композера есть кнопка с динамиком: она стоит между кнопкой
+вложений («+») и переключателем прав доступа (`Full access` и остальные
+сдвинуты правее). Первый клик выключает звук — волны справа от динамика
+исчезают, а сам динамик зачёркивается; второй клик возвращает всё обратно.
+Уведомления при выключенном звуке продолжают приходить.
 
 ### Установка
 

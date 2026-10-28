@@ -354,7 +354,34 @@
     check('clip truncates with an ellipsis', clipped.length === 60 && clipped.slice(-1) === '…', 'len=' + clipped.length);
     check('interactionText survives an unknown payload', typeof plugin._test.interactionText({}).title === 'string');
 
-    /* 15. disposal detaches every subscription */
+    /* 15. the composer control: icons and slot registration */
+    check('speaker icon carries two waves', plugin._test.icons.waves.length === 2);
+    check('muted speaker carries a slash', typeof plugin._test.icons.slash === 'string' && plugin._test.icons.slash.length > 0);
+
+    var headless = window.__REG__.factory(function () { return {}; });
+    check('no React keeps the plugin headless', headless && typeof headless.apply === 'function' && headless.inject.indexOf('slots') >= 0);
+
+    var fakeReact = {
+      createElement: function () { return null; },
+      useState: function (value) { return [value, function () {}]; },
+      useEffect: function () {},
+      useRef: function () { return { current: null }; }
+    };
+    var withUi = window.__REG__.factory(function () { return fakeReact; });
+    var registered = null;
+    var uiCore = makeCore();
+    uiCore.ctx.slots = {
+      inject: function (name, callback) { callback(); },
+      register: function (descriptor, component) { registered = { descriptor: descriptor, component: component }; }
+    };
+    withUi.apply(uiCore.ctx);
+    check('composer toggle registers into conversation.input.left',
+      !!registered && registered.descriptor.name === 'conversation.input.left',
+      registered ? registered.descriptor.name : 'nothing registered');
+    check('composer toggle renders a component', !!registered && typeof registered.component === 'function');
+    uiCore.dispose();
+
+    /* 16. disposal detaches every subscription */
     core.dispose();
     reset();
     core.remote.emit('api-session/error', 's1', 'after dispose');

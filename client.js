@@ -8,15 +8,25 @@
  *   - `uiSession.sessionStatus` (running, pendingInteraction per Session)
  *   - `sessions.list` (titles, subagent detection)
  *
- * No React, no slot: it stays headless and only touches the browser API.
+ * It also contributes one small control to the composer row: a speaker that
+ * mutes (or restores) the cue. The notification wiring stays headless; only
+ * that button uses React, and the plugin degrades to headless without it.
  */
 (function () {
   if (typeof window === 'undefined' || !window.__ModuleLoader__ || typeof window.__ModuleLoader__.load !== 'function') return;
 
   window.__ModuleLoader__.load({
     id: '@local/desktop-notify',
-    factory: function () {
+    factory: function (require) {
       'use strict';
+
+      var React = null;
+      try {
+        if (typeof require === 'function') React = require('react');
+      } catch (error) {
+        React = null;
+      }
+      if (!React || typeof React.createElement !== 'function') React = null;
 
       /* ------------------------------------------------------------------ *
        * Settings (localStorage, read on every use so edits apply at once)
@@ -310,6 +320,145 @@
       }
 
       /* ------------------------------------------------------------------ *
+       * Composer control: a speaker that mutes the cue
+       * ------------------------------------------------------------------ */
+
+      var ICONS = {
+        body: 'M2.2 6h2.4l3.1-2.8v9.6L4.6 10H2.2z',
+        waves: ['M10 6.1a3.1 3.1 0 0 1 0 3.9', 'M11.9 4.2a5.6 5.6 0 0 1 0 7.7'],
+        slash: 'M3 13 13 3'
+      };
+
+      function uiLanguage() {
+        try {
+          var lang = String(document.documentElement.lang || '').toLowerCase();
+          if (lang.indexOf('ru') === 0) return 'ru';
+          if (lang.indexOf('zh') === 0) return 'zh';
+          if (lang) return 'en';
+        } catch (error) { /* fall through */ }
+        return language();
+      }
+
+      var LABELS = {
+        en: { on: 'Notification sound on — mute', off: 'Notification sound off — enable' },
+        ru: { on: 'Звук уведомлений включён — выключить', off: 'Звук уведомлений выключен — включить' },
+        zh: { on: '通知声音已开启 — 静音', off: '通知声音已关闭 — 开启' }
+      };
+
+      function labelFor(on) {
+        var words = LABELS[uiLanguage()] || LABELS.en;
+        return on ? words.on : words.off;
+      }
+
+      var soundWatchers = typeof Set === 'function' ? new Set() : null;
+
+      function soundOn() {
+        return flag(KEYS.sound, true);
+      }
+
+      function setSound(enabled) {
+        try { window.localStorage.setItem(KEYS.sound, enabled ? '1' : '0'); } catch (error) { /* ignore */ }
+        if (!soundWatchers) return;
+        soundWatchers.forEach(function (listener) {
+          try { listener(enabled); } catch (error) { /* ignore */ }
+        });
+      }
+
+      function subscribeSound(listener) {
+        if (!soundWatchers) return function () {};
+        soundWatchers.add(listener);
+        return function () { soundWatchers.delete(listener); };
+      }
+
+      function speakerIcon(muted) {
+        var children = [React.createElement('path', { key: 'body', d: ICONS.body, fill: 'currentColor', stroke: 'none' })];
+        if (muted) {
+          children.push(React.createElement('path', { key: 'slash', d: ICONS.slash, fill: 'none' }));
+        } else {
+          for (var index = 0; index < ICONS.waves.length; index += 1) {
+            children.push(React.createElement('path', { key: 'wave' + index, d: ICONS.waves[index], fill: 'none' }));
+          }
+        }
+        return React.createElement('svg', {
+          viewBox: '0 0 16 16', width: 17, height: 17, 'aria-hidden': true,
+          stroke: 'currentColor', strokeWidth: 1.5, strokeLinecap: 'round', strokeLinejoin: 'round'
+        }, children);
+      }
+
+      /* The composer row is a flex line: ordering our entry before the
+         permission/plan group is what "Full access moves right" means. */
+      function placeBeforeModes(element) {
+        if (!element || !element.parentElement) return function () {};
+        var touched = [];
+        var candidates = [element, element.parentElement];
+        for (var index = 0; index < candidates.length; index += 1) {
+          var candidate = candidates[index];
+          var row = candidate && candidate.parentElement;
+          if (!row || !row.children) continue;
+          var modes = null;
+          for (var slot = 0; slot < row.children.length; slot += 1) {
+            var node = row.children[slot];
+            if (node === candidate) continue;
+            if (node.tagName === 'DIV' && node.querySelector && node.querySelector('button')) {
+              modes = node;
+              break;
+            }
+          }
+          if (!modes) continue;
+          touched.push(candidate, modes);
+          candidate.style.order = '1';
+          modes.style.order = '2';
+          break;
+        }
+        return function () {
+          for (var reset = 0; reset < touched.length; reset += 1) touched[reset].style.order = '';
+        };
+      }
+
+      function SoundToggle() {
+        var state = React.useState(soundOn());
+        var on = state[0];
+        var setOn = state[1];
+        var ref = React.useRef(null);
+
+        React.useEffect(function () {
+          return subscribeSound(setOn);
+        }, []);
+        React.useEffect(function () {
+          return placeBeforeModes(ref.current);
+        }, []);
+
+        var label = labelFor(on);
+        var rest = on ? 0.78 : 0.58;
+        return React.createElement('div', {
+          ref: ref,
+          'data-desktop-notify': 'sound',
+          style: { display: 'inline-flex', alignItems: 'center' }
+        }, React.createElement('button', {
+          type: 'button',
+          'aria-label': label,
+          'aria-pressed': on ? 'true' : 'false',
+          title: label,
+          style: {
+            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+            width: 28, height: 28, padding: 0, margin: 0, border: 'none', borderRadius: 8,
+            background: 'transparent', color: 'inherit', cursor: 'pointer', opacity: rest
+          },
+          onMouseDown: function (event) { event.preventDefault(); },
+          onPointerDown: function (event) { event.stopPropagation(); },
+          onClick: function (event) { event.stopPropagation(); setSound(!on); },
+          onMouseEnter: function (event) {
+            event.currentTarget.style.opacity = '1';
+            event.currentTarget.style.background = 'rgba(127,127,127,0.12)';
+          },
+          onMouseLeave: function (event) {
+            event.currentTarget.style.opacity = String(rest);
+            event.currentTarget.style.background = 'transparent';
+          }
+        }, speakerIcon(!on)));
+      }
+
+      /* ------------------------------------------------------------------ *
        * Session bookkeeping
        * ------------------------------------------------------------------ */
 
@@ -465,6 +614,21 @@
           });
         } catch (error) { /* ignore */ }
 
+        // The mute control in the composer row, when the client ships React and
+        // the conversation row is composed. Without either, notifications still work.
+        if (React && ctx.slots && typeof ctx.slots.inject === 'function') {
+          try {
+            ctx.slots.inject('conversation.input.left', function () {
+              ctx.slots.register({
+                name: 'conversation.input.left',
+                id: 'desktop-notify-sound',
+                order: 100,
+                label: 'Notification sound'
+              }, SoundToggle);
+            });
+          } catch (error) { /* no composer row in this composition */ }
+        }
+
         if (typeof ctx.effect === 'function') {
           ctx.effect(function () {
             return function () {
@@ -481,7 +645,7 @@
 
       return {
         name: 'desktop-notify',
-        inject: ['sessions', 'remote', 'uiSession'],
+        inject: ['slots', 'sessions', 'remote', 'uiSession'],
         apply: apply,
         // Exposed for the offline test harness; the host ignores unknown keys.
         _test: {
@@ -492,6 +656,7 @@
           text: text,
           clip: clip,
           interactionText: interactionText,
+          icons: ICONS,
           keys: KEYS
         }
       };
