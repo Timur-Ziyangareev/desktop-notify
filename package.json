@@ -4,6 +4,20 @@
   "private": true,
   "type": "module",
   "description": "Desktop notifications with a sound cue when a DSH turn finishes, needs the user, or fails.",
+  "license": "MIT",
+  "author": "Timur Ziyangareev <timurziangareev@gmail.com>",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Timur-Ziyangareev/desktop-notify.git"
+  },
+  "keywords": [
+    "deepseek-harness",
+    "dsh",
+    "plugin",
+    "notifications",
+    "toast",
+    "windows"
+  ],
   "exports": {
     ".": "./index.js",
     "./client": "./client.js"
@@ -12,7 +26,8 @@
     "index.js",
     "client.js",
     "cordis.patch.yml",
-    "README.md"
+    "README.md",
+    "LICENSE"
   ],
   "dsh": {
     "bundle": {
