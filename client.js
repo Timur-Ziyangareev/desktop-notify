@@ -31,7 +31,8 @@
         lang: 'dsh-notify.lang'
       };
 
-      var DEFAULT_VOLUME = 0.6;
+      var DEFAULT_VOLUME = 2.0;
+      var MAX_VOLUME = 2.0;
 
       function flag(key, fallback) {
         try {
@@ -52,7 +53,7 @@
           if (raw === null) return DEFAULT_VOLUME;
           var value = Number(raw);
           if (!isFinite(value)) return DEFAULT_VOLUME;
-          return Math.min(1, Math.max(0, value));
+          return Math.min(MAX_VOLUME, Math.max(0, value));
         } catch (error) {
           return DEFAULT_VOLUME;
         }
@@ -143,10 +144,56 @@
         }
       }
 
+      /* A level above 1 asks for more than a single tone can carry: the sum is
+         soft-limited instead of hard-clipped, so "louder" stays a clean beep
+         rather than a crackle. Below the knee the curve is the identity. */
+      var LIMITER_KNEE = 0.5;
+      var LIMITER_CEILING = 0.95;
+      var limiterCurve = null;
+
+      function curve() {
+        if (limiterCurve) return limiterCurve;
+        var points = 4096;
+        limiterCurve = new Float32Array(points);
+        for (var index = 0; index < points; index += 1) {
+          var x = (index / (points - 1)) * 2 - 1;
+          var magnitude = Math.abs(x);
+          var shaped = magnitude <= LIMITER_KNEE
+            ? magnitude
+            : LIMITER_KNEE + (LIMITER_CEILING - LIMITER_KNEE) * Math.tanh((magnitude - LIMITER_KNEE) / (LIMITER_CEILING - LIMITER_KNEE));
+          limiterCurve[index] = x < 0 ? -shaped : shaped;
+        }
+        return limiterCurve;
+      }
+
+      var outputs = typeof WeakMap === 'function' ? new WeakMap() : null;
+
+      /** Destination, routed through one shared soft limiter per context. */
+      function outputFor(context) {
+        if (!outputs) return context.destination;
+        var cached = outputs.get(context);
+        if (cached !== undefined) return cached;
+        var node = context.destination;
+        try {
+          if (typeof context.createWaveShaper === 'function') {
+            var shaper = context.createWaveShaper();
+            shaper.curve = curve();
+            shaper.oversample = '2x';
+            shaper.connect(context.destination);
+            node = shaper;
+          }
+        } catch (error) {
+          node = context.destination;
+        }
+        outputs.set(context, node);
+        return node;
+      }
+
       /** Schedule one pattern on any AudioContext-shaped object. */
       function play(context, notes, level, when) {
         if (!context) return false;
         var start = (typeof when === 'number' ? when : context.currentTime || 0) + 0.02;
+        var output = outputFor(context);
         for (var index = 0; index < notes.length; index += 1) {
           var note = notes[index];
           var osc = context.createOscillator();
@@ -161,7 +208,7 @@
           amp.gain.exponentialRampToValueAtTime(peak, from + 0.015);
           amp.gain.exponentialRampToValueAtTime(0.0001, to);
           osc.connect(amp);
-          amp.connect(context.destination);
+          amp.connect(output);
           osc.start(from);
           osc.stop(to + 0.03);
         }

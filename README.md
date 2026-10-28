@@ -54,7 +54,7 @@ notification is due.
 |---|---|---|
 | `dsh-notify.enabled` | `1` | Master switch for toasts and sound |
 | `dsh-notify.sound` | `1` | The WebAudio cue |
-| `dsh-notify.volume` | `0.6` | Peak gain, `0`…`1` |
+| `dsh-notify.volume` | `2` | Requested level, `0`…`2`; above `1` the cue is soft-limited instead of digitally clipped |
 | `dsh-notify.subagents` | `0` | Also announce subagent sessions |
 | `dsh-notify.inApp` | `1` | In-page card when the OS toast is unavailable |
 | `dsh-notify.lang` | browser | `ru` or `en` for the copy |
@@ -123,7 +123,8 @@ Harness.
 
 Без окна настроек — ключи `localStorage` страницы читаются при каждом
 уведомлении: `dsh-notify.enabled` (вкл/выкл), `dsh-notify.sound` (звук),
-`dsh-notify.volume` (громкость 0…1, по умолчанию 0.6), `dsh-notify.subagents`
+`dsh-notify.volume` (громкость 0…2, по умолчанию 2 — выше 1 сигнал проходит
+через мягкий лимитер), `dsh-notify.subagents`
 (уведомлять о субагентах), `dsh-notify.inApp` (всплывающая карточка внутри
 окна), `dsh-notify.lang` (`ru`/`en`).
 

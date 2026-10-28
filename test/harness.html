@@ -68,6 +68,9 @@
   FakeAudioContext.prototype.createGain = function () {
     return { gain: new FakeParam(), connect: function () {} };
   };
+  FakeAudioContext.prototype.createWaveShaper = function () {
+    return { curve: null, oversample: '', connect: function () {} };
+  };
   FakeAudioContext.prototype.resume = function () { this.state = 'running'; return Promise.resolve(); };
   window.AudioContext = FakeAudioContext;
 
@@ -321,6 +324,29 @@
         check('cue "' + kind + '" is audible', rms > 0.01, 'rms=' + rms.toFixed(4));
         check('cue "' + kind + '" does not clip', peak <= 1, 'peak=' + peak.toFixed(3));
       }
+
+      /* A level of 2 must really be louder than 1, and still stay inside the
+         limiter instead of slamming into the digital ceiling. */
+      async function measure(level) {
+        var offline = new Offline(1, 44100, 44100);
+        plugin._test.play(offline, plugin._test.patterns.done, level, 0);
+        var buffer = await offline.startRendering();
+        var data = buffer.getChannelData(0);
+        var sum = 0;
+        var peak = 0;
+        for (var index = 0; index < data.length; index += 1) {
+          sum += data[index] * data[index];
+          if (Math.abs(data[index]) > peak) peak = Math.abs(data[index]);
+        }
+        return { rms: Math.sqrt(sum / data.length), peak: peak };
+      }
+
+      var quiet = await measure(1);
+      var loud = await measure(2);
+      check('level 2 is louder than level 1', loud.rms > quiet.rms * 1.05,
+        'rms ' + quiet.rms.toFixed(3) + ' -> ' + loud.rms.toFixed(3));
+      check('level 2 stays off the digital ceiling', loud.peak <= 0.99, 'peak=' + loud.peak.toFixed(3));
+      check('default level asks for 2', plugin._test.volume() === 2, 'volume=' + plugin._test.volume());
     }
 
     /* 14. text helpers */
