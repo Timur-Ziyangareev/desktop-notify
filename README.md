@@ -1,0 +1,134 @@
+# desktop-notify
+
+Desktop notifications with a sound cue for DeepSeek Harness turns.
+
+**English** | [Русский](#русский)
+
+## What it does
+
+Three moments of a turn announce themselves on the computer, each with its own
+sound pattern:
+
+| Moment | Toast | Sound |
+|---|---|---|
+| The request finished | “Done” + the session title | rising two-note chime |
+| The agent needs the user: a permission request, a question, a plan review | “Permission needed” / “Answer needed” / “Plan review needed” + the tool or question | three bright beeps |
+| The request failed | “Error” + the failure text | low descending pair |
+
+The toast is a real Windows notification, so it shows up above other windows and
+stays in the Action Center. Clicking it brings the window forward. The sound is
+synthesized in the page with WebAudio: no audio files, and the cue is audible
+even when Windows notification sounds are turned off.
+
+The agent never learns about this: nothing is registered model-facing, and the
+plugin adds no tokens to a request.
+
+## Install
+
+The package lives in the profile that runs the Desktop application:
+
+```powershell
+$src = 'C:\Users\timur_m1pc\Documents\deepseek-harness\default-workspace\desktop-notify'
+$dst = 'C:\Users\timur_m1pc\.dsh\profiles\desktop\node_modules\@local\desktop-notify'
+New-Item -ItemType Directory -Force $dst | Out-Null
+Copy-Item "$src\package.json","$src\index.js","$src\client.js","$src\cordis.patch.yml","$src\README.md" $dst -Force
+```
+
+Then add the dependency and the bundle to `~/.dsh/profiles/desktop/package.json`:
+
+```json
+"dependencies": { "@local/desktop-notify": "1.0.0" },
+"dsh": { "profile": { "bundles": ["@deepseek-ai/dsh-base", "@deepseek-ai/dsh-web-app", "@local/desktop-notify"] } }
+```
+
+Restart DeepSeek Harness afterwards. A client plugin reaches the page with the
+index injection table built at Host startup, so a page refresh alone does not
+pick it up unless HMR recomposed the profile.
+
+## Settings
+
+No dialog: the options are `localStorage` keys of the page, read every time a
+notification is due.
+
+| Key | Default | Meaning |
+|---|---|---|
+| `dsh-notify.enabled` | `1` | Master switch for toasts and sound |
+| `dsh-notify.sound` | `1` | The WebAudio cue |
+| `dsh-notify.volume` | `0.3` | Peak gain, `0`…`1` |
+| `dsh-notify.subagents` | `0` | Also announce subagent sessions |
+| `dsh-notify.inApp` | `1` | In-page card when the OS toast is unavailable |
+| `dsh-notify.lang` | browser | `ru` or `en` for the copy |
+
+Toggle from the DevTools console of the window:
+
+```js
+localStorage.setItem('dsh-notify.sound', '0'); // silence, keep the toasts
+```
+
+## How it hooks in
+
+The plugin is headless: it registers no slot and renders nothing. It subscribes
+to three public client feeds:
+
+- `api-session/status` — `running` true → false is a finished turn;
+- `api-session/error` — the live failure outlet for a session;
+- `uiSession.sessionStatus` — `pendingInteraction` carries the approval request,
+  the question card, or the plan review that is waiting for an answer.
+
+`api-session/status` also fires for subagent sessions; those are skipped unless
+`dsh-notify.subagents` is on. A turn that failed suppresses the “Done” toast for
+six seconds, so a failure is announced once, not twice.
+
+## Tests
+
+`test/harness.html` runs the plugin against stubbed services in a browser:
+finished, approval, question, error, subagent filtering, deduplication, the
+fallback card, and an `OfflineAudioContext` render of every pattern (a silent
+pattern fails the test). Run it with:
+
+```powershell
+& $node test\run.mjs
+```
+
+## Known limits
+
+- Notifications belong to the page: with the window closed there is nothing to
+  announce.
+- A browser tab that never received a click cannot start audio; Electron does
+  not have that restriction.
+- Windows may suppress toasts in Focus Assist; that switch belongs to the OS.
+
+## Русский
+
+Плагин присылает уведомления на компьютер со звуком в трёх случаях:
+
+| Когда | Уведомление | Звук |
+|---|---|---|
+| Запрос выполнен | «Готово» + название сессии | восходящий двухнотный сигнал |
+| Нужны права / ответ / подтверждение плана | «Нужны права», «Нужен ответ», «Нужно подтвердить план» + инструмент или вопрос | три высоких сигнала |
+| Ошибка при запросе | «Ошибка» + текст ошибки | низкий нисходящий сигнал |
+
+Уведомление — настоящее системное (всплывает поверх окон, остаётся в центре
+уведомлений Windows), по клику окно выходит вперёд. Звук синтезируется прямо в
+странице, поэтому не зависит от настроек звуков уведомлений Windows.
+
+### Установка
+
+Скопировать файлы в профиль `~/.dsh/profiles/desktop/node_modules/@local/desktop-notify`,
+добавить `@local/desktop-notify` в `dependencies` и в `dsh.profile.bundles`
+файла `~/.dsh/profiles/desktop/package.json`, затем перезапустить DeepSeek
+Harness.
+
+### Настройки
+
+Без окна настроек — ключи `localStorage` страницы читаются при каждом
+уведомлении: `dsh-notify.enabled` (вкл/выкл), `dsh-notify.sound` (звук),
+`dsh-notify.volume` (громкость 0…1, по умолчанию 0.3), `dsh-notify.subagents`
+(уведомлять о субагентах), `dsh-notify.inApp` (всплывающая карточка внутри
+окна), `dsh-notify.lang` (`ru`/`en`).
+
+Отключить только звук:
+
+```js
+localStorage.setItem('dsh-notify.sound', '0');
+```

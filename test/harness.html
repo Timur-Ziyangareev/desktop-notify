@@ -1,0 +1,354 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>desktop-notify harness</title>
+<style>
+  body { font: 13px/1.45 system-ui, sans-serif; margin: 16px; background: #14141a; color: #e8e8ee; }
+  h1 { font-size: 15px; margin: 0 0 12px; }
+  li { margin: 2px 0; }
+  .ok { color: #7ee787; }
+  .bad { color: #ff7b72; }
+  pre { white-space: pre-wrap; }
+</style>
+</head>
+<body>
+<h1>desktop-notify harness</h1>
+<ul id="out"></ul>
+<pre id="detail"></pre>
+
+<script>
+  window.__RESULTS__ = [];
+  window.__DONE__ = false;
+
+  function check(name, ok, detail) {
+    window.__RESULTS__.push({ name: name, ok: ok === true, detail: detail === undefined ? '' : String(detail) });
+  }
+
+  /* ---- Stubs that must exist before the plugin runs ---- */
+
+  function FakeNotification(title, options) {
+    FakeNotification.created.push({
+      title: String(title || ''),
+      body: String((options && options.body) || ''),
+      silent: !!(options && options.silent)
+    });
+    this.close = function () {};
+  }
+  FakeNotification.created = [];
+  FakeNotification.permission = 'granted';
+  FakeNotification.requestPermission = function () {
+    return Promise.resolve(FakeNotification.permission);
+  };
+  window.Notification = FakeNotification;
+
+  function FakeParam() { this.value = 0; }
+  FakeParam.prototype.setValueAtTime = function (value) { this.value = value; };
+  FakeParam.prototype.exponentialRampToValueAtTime = function (value) { this.value = value; };
+
+  function FakeAudioContext() {
+    this.state = 'running';
+    this.currentTime = 0;
+    this.destination = {};
+    this.oscillators = [];
+    FakeAudioContext.instances.push(this);
+  }
+  FakeAudioContext.instances = [];
+  FakeAudioContext.prototype.createOscillator = function () {
+    var osc = {
+      type: 'sine',
+      frequency: new FakeParam(),
+      connect: function () {},
+      start: function (at) { this.startedAt = at; },
+      stop: function (at) { this.stoppedAt = at; }
+    };
+    this.oscillators.push(osc);
+    return osc;
+  };
+  FakeAudioContext.prototype.createGain = function () {
+    return { gain: new FakeParam(), connect: function () {} };
+  };
+  FakeAudioContext.prototype.resume = function () { this.state = 'running'; return Promise.resolve(); };
+  window.AudioContext = FakeAudioContext;
+
+  window.__ModuleLoader__ = {
+    load: function (registration) { window.__REG__ = registration; }
+  };
+</script>
+
+<script src="../client.js"></script>
+
+<script>
+(async function () {
+  window.localStorage.clear();
+
+  function rows() {
+    return {
+      's1': { sessionId: 's1', title: 'Правка макета', running: false, retainedBy: { mainView: 1 } },
+      'sub': { sessionId: 'sub', title: 'child work', running: false, origin: 'subagent', parentSessionId: 's1', depth: 1 }
+    };
+  }
+
+  function makeCore() {
+    var table = rows();
+    var listeners = Object.create(null);
+    var statusMap = new Map();
+    var statusListeners = new Set();
+    var disposers = [];
+    var remote = {
+      $on: function (name, fn) {
+        (listeners[name] || (listeners[name] = [])).push(fn);
+        return function () {
+          var list = listeners[name] || [];
+          var index = list.indexOf(fn);
+          if (index >= 0) list.splice(index, 1);
+        };
+      },
+      emit: function (name) {
+        var args = Array.prototype.slice.call(arguments, 1);
+        (listeners[name] || []).slice().forEach(function (fn) { fn.apply(null, args); });
+      }
+    };
+    var sessions = {
+      list: {
+        getSnapshot: function () { return { ids: Object.keys(table), byId: table, phase: 'ready' }; },
+        subscribe: function () { return function () {}; }
+      }
+    };
+    var uiSession = {
+      sessionStatus: {
+        getSnapshot: function () { return statusMap; },
+        subscribe: function (fn) {
+          statusListeners.add(fn);
+          return function () { statusListeners.delete(fn); };
+        }
+      }
+    };
+    var ctx = {
+      sessions: sessions,
+      remote: remote,
+      uiSession: uiSession,
+      get: function (name) {
+        if (name === 'uiSession') return uiSession;
+        if (name === 'sessions') return sessions;
+        if (name === 'remote') return remote;
+        return undefined;
+      },
+      effect: function (callback) {
+        var dispose = callback();
+        if (typeof dispose === 'function') disposers.push(dispose);
+      }
+    };
+    return {
+      ctx: ctx,
+      remote: remote,
+      status: {
+        set: function (id, value) {
+          statusMap.set(id, value);
+          statusListeners.forEach(function (fn) { fn(); });
+        }
+      },
+      dispose: function () { disposers.splice(0).forEach(function (fn) { fn(); }); }
+    };
+  }
+
+  function oscillators() {
+    return FakeAudioContext.instances.reduce(function (sum, instance) {
+      return sum + instance.oscillators.length;
+    }, 0);
+  }
+
+  var oscillatorBase = 0;
+
+  function reset() {
+    FakeNotification.created.length = 0;
+    oscillatorBase = oscillators();
+  }
+
+  /* The plugin keeps one AudioContext for the page lifetime, so tests compare
+     against the note count at the last reset rather than a fresh instance. */
+  function sinceOscillators() {
+    return oscillators() - oscillatorBase;
+  }
+
+  function lastTitle() {
+    var list = FakeNotification.created;
+    return list.length ? list[list.length - 1].title : '';
+  }
+
+  function lastBody() {
+    var list = FakeNotification.created;
+    return list.length ? list[list.length - 1].body : '';
+  }
+
+  try {
+    var plugin = window.__REG__.factory(function () { return {}; });
+    check('factory registered a plugin', !!plugin && typeof plugin.apply === 'function');
+    check('plugin injects client services', Array.isArray(plugin.inject) && plugin.inject.indexOf('uiSession') >= 0,
+      (plugin.inject || []).join(','));
+
+    var core = makeCore();
+    plugin.apply(core.ctx);
+    check('nothing announced on the first snapshot', FakeNotification.created.length === 0,
+      'created=' + FakeNotification.created.length);
+
+    /* 1. finished turn */
+    reset();
+    core.remote.emit('api-session/status', 's1', true);
+    core.remote.emit('api-session/status', 's1', false);
+    check('finished turn raises one toast', FakeNotification.created.length === 1, 'created=' + FakeNotification.created.length);
+    check('finished toast says done', lastTitle() === 'Готово', lastTitle());
+    check('finished toast names the session', lastBody() === 'Правка макета', lastBody());
+    check('finished toast is silent (own cue)', FakeNotification.created[0] && FakeNotification.created[0].silent === true);
+    check('finished cue scheduled two notes', sinceOscillators() === 2, 'oscillators=' + sinceOscillators());
+
+    /* 2. subagent sessions stay quiet */
+    reset();
+    core.remote.emit('api-session/status', 'sub', true);
+    core.remote.emit('api-session/status', 'sub', false);
+    check('subagent completion is filtered out', FakeNotification.created.length === 0,
+      'created=' + FakeNotification.created.length);
+
+    /* 3. approval request */
+    reset();
+    var approval = {
+      kind: 'approval',
+      toolName: 'pwsh',
+      reason: 'escalate sandbox to danger-full-access: install a driver',
+      displayReason: { en: 'Allow this operation with danger-full-access permissions: install a driver' }
+    };
+    core.status.set('s1', { running: true, pendingInteraction: approval });
+    check('approval raises one toast', FakeNotification.created.length === 1, 'created=' + FakeNotification.created.length);
+    check('approval toast title', lastTitle() === 'Нужны права', lastTitle());
+    check('approval toast names the tool', lastBody().indexOf('pwsh') >= 0, lastBody());
+    check('approval toast carries the reason', lastBody().indexOf('danger-full-access') >= 0, lastBody());
+
+    /* 4. the same pending object republished does not repeat */
+    reset();
+    core.status.set('s1', { running: true, pendingInteraction: approval });
+    check('republished interaction is deduplicated', FakeNotification.created.length === 0,
+      'created=' + FakeNotification.created.length);
+
+    /* 5. answered, then a question */
+    core.status.set('s1', { running: true, pendingInteraction: undefined });
+    reset();
+    core.status.set('s1', {
+      running: true,
+      pendingInteraction: { kind: 'question', questions: [{ id: 'q1', header: 'Какой цвет?', question: 'Выберите цвет кнопки' }] }
+    });
+    check('question raises one toast', FakeNotification.created.length === 1, 'created=' + FakeNotification.created.length);
+    check('question toast title', lastTitle() === 'Нужен ответ', lastTitle());
+    check('question toast carries the header', lastBody() === 'Какой цвет?', lastBody());
+
+    /* 6. plan review */
+    core.status.set('s1', { running: true, pendingInteraction: undefined });
+    reset();
+    core.status.set('s1', {
+      running: true,
+      pendingInteraction: { kind: 'plan-review', questions: [{ id: 'p1', header: 'План из 4 шагов' }] }
+    });
+    check('plan review has its own title', lastTitle() === 'Нужно подтвердить план', lastTitle());
+    core.status.set('s1', { running: false, pendingInteraction: undefined });
+
+    /* 7. failure */
+    reset();
+    core.remote.emit('api-session/error', 's1', 'DeepSeek Messages transport failed');
+    check('failure raises one toast', FakeNotification.created.length === 1, 'created=' + FakeNotification.created.length);
+    check('failure toast title', lastTitle() === 'Ошибка', lastTitle());
+    check('failure toast carries the message', lastBody() === 'DeepSeek Messages transport failed', lastBody());
+    check('failure cue scheduled two notes', sinceOscillators() === 2, 'oscillators=' + sinceOscillators());
+
+    /* 8. a failed turn does not also announce "done" */
+    reset();
+    core.remote.emit('api-session/status', 's1', true);
+    core.remote.emit('api-session/error', 's1', 'boom');
+    core.remote.emit('api-session/status', 's1', false);
+    var done = FakeNotification.created.filter(function (item) { return item.title === 'Готово'; });
+    check('failed turn skips the done toast', done.length === 0, 'done=' + done.length);
+
+    /* 9. sound can be turned off without losing the toast */
+    reset();
+    window.localStorage.setItem('dsh-notify.sound', '0');
+    core.remote.emit('api-session/error', 's1', 'quiet please');
+    check('sound off still shows the toast', FakeNotification.created.length === 1, 'created=' + FakeNotification.created.length);
+    check('sound off schedules nothing', sinceOscillators() === 0, 'oscillators=' + sinceOscillators());
+    window.localStorage.removeItem('dsh-notify.sound');
+
+    /* 10. master switch */
+    reset();
+    window.localStorage.setItem('dsh-notify.enabled', '0');
+    core.remote.emit('api-session/error', 's1', 'muted');
+    check('master switch silences everything', FakeNotification.created.length === 0, 'created=' + FakeNotification.created.length);
+    window.localStorage.removeItem('dsh-notify.enabled');
+
+    /* 11. subagents can be enabled */
+    reset();
+    window.localStorage.setItem('dsh-notify.subagents', '1');
+    core.remote.emit('api-session/status', 'sub', true);
+    core.remote.emit('api-session/status', 'sub', false);
+    check('subagent announcements can be enabled', FakeNotification.created.length === 1, 'created=' + FakeNotification.created.length);
+    window.localStorage.removeItem('dsh-notify.subagents');
+
+    /* 12. in-page fallback when the OS toast is unavailable */
+    reset();
+    FakeNotification.permission = 'denied';
+    core.remote.emit('api-session/error', 's1', 'no toast for you');
+    var host = document.getElementById('desktop-notify-host');
+    check('fallback card appears when permission is denied', !!host && host.children.length === 1,
+      host ? 'children=' + host.children.length : 'no host');
+    FakeNotification.permission = 'granted';
+
+    /* 13. the cue really sounds: render each pattern offline and measure it */
+    var Offline = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+    if (!Offline) {
+      check('OfflineAudioContext available', false, 'missing');
+    } else {
+      var kinds = ['done', 'attention', 'error'];
+      for (var kindIndex = 0; kindIndex < kinds.length; kindIndex += 1) {
+        var kind = kinds[kindIndex];
+        var offline = new Offline(1, 44100, 44100);
+        plugin._test.play(offline, plugin._test.patterns[kind], plugin._test.volume(), 0);
+        var buffer = await offline.startRendering();
+        var data = buffer.getChannelData(0);
+        var sum = 0;
+        var peak = 0;
+        for (var sample = 0; sample < data.length; sample += 1) {
+          var value = data[sample];
+          sum += value * value;
+          if (Math.abs(value) > peak) peak = Math.abs(value);
+        }
+        var rms = Math.sqrt(sum / data.length);
+        check('cue "' + kind + '" is audible', rms > 0.01, 'rms=' + rms.toFixed(4));
+        check('cue "' + kind + '" does not clip', peak <= 1, 'peak=' + peak.toFixed(3));
+      }
+    }
+
+    /* 14. text helpers */
+    var clipped = plugin._test.clip('a'.repeat(400), 60);
+    check('clip truncates with an ellipsis', clipped.length === 60 && clipped.slice(-1) === '…', 'len=' + clipped.length);
+    check('interactionText survives an unknown payload', typeof plugin._test.interactionText({}).title === 'string');
+
+    /* 15. disposal detaches every subscription */
+    core.dispose();
+    reset();
+    core.remote.emit('api-session/error', 's1', 'after dispose');
+    check('disposed plugin is silent', FakeNotification.created.length === 0, 'created=' + FakeNotification.created.length);
+  } catch (error) {
+    check('suite ran without exceptions', false, (error && error.stack) || String(error));
+  }
+
+  var list = document.getElementById('out');
+  var failed = 0;
+  window.__RESULTS__.forEach(function (item) {
+    var li = document.createElement('li');
+    li.className = item.ok ? 'ok' : 'bad';
+    li.textContent = (item.ok ? 'PASS ' : 'FAIL ') + item.name + (item.detail ? ' — ' + item.detail : '');
+    list.appendChild(li);
+    if (!item.ok) failed += 1;
+  });
+  document.getElementById('detail').textContent = failed + ' failed / ' + window.__RESULTS__.length + ' total';
+  window.__DONE__ = true;
+})();
+</script>
+</body>
+</html>
