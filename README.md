@@ -1,6 +1,7 @@
-# desktop-notify
+# desktop-notify (DeepSeek Harness plugin)
 
-Desktop notifications with a sound cue for DeepSeek Harness turns.
+A headless DeepSeek Harness client plugin: desktop notifications with a sound cue
+for turns that finish, need the user, or fail.
 
 **English** | [Русский](#русский)
 
