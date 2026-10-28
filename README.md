@@ -25,13 +25,13 @@ plugin adds no tokens to a request.
 
 ## Install
 
-The package lives in the profile that runs the Desktop application:
+The package lives in the profile that runs the Desktop application. From the
+repository root:
 
 ```powershell
-$src = 'C:\Users\timur_m1pc\Documents\deepseek-harness\default-workspace\desktop-notify'
-$dst = 'C:\Users\timur_m1pc\.dsh\profiles\desktop\node_modules\@local\desktop-notify'
+$dst = "$env:USERPROFILE\.dsh\profiles\desktop\node_modules\@local\desktop-notify"
 New-Item -ItemType Directory -Force $dst | Out-Null
-Copy-Item "$src\package.json","$src\index.js","$src\client.js","$src\cordis.patch.yml","$src\README.md" $dst -Force
+Copy-Item .\package.json, .\index.js, .\client.js, .\cordis.patch.yml, .\README.md $dst -Force
 ```
 
 Then add the dependency and the bundle to `~/.dsh/profiles/desktop/package.json`:
@@ -87,8 +87,11 @@ fallback card, and an `OfflineAudioContext` render of every pattern (a silent
 pattern fails the test). Run it with:
 
 ```powershell
-& $node test\run.mjs
+npm install undici        # CDP client; or point UNDICI_PATH at an existing copy
+node test/run.mjs
 ```
+
+`EDGE_PATH` overrides the Edge executable, `CDP_PORT` and `PORT` the ports.
 
 ## Known limits
 

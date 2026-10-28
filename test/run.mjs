@@ -17,7 +17,7 @@ import { createRequire } from 'node:module';
 
 const HERE = fileURLToPath(new URL('.', import.meta.url));
 const ROOT = normalize(join(HERE, '..'));
-const EDGE = 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe';
+const EDGE = process.env.EDGE_PATH || 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe';
 const PORT = Number(process.env.PORT || 8798);
 const DEBUG_PORT = Number(process.env.CDP_PORT || 9223);
 const PROFILE = join(process.env.TEMP || '.', 'desktop-notify-' + Date.now());
@@ -36,7 +36,7 @@ const require_ = createRequire(import.meta.url);
 function loadUndici() {
   const paths = [
     process.env.UNDICI_PATH,
-    'C:/Users/timur_m1pc/.dsh/dsh-runtimes/dsh-primary-runtime/dependencies/pnpm/dist/node_modules/undici'
+    'undici'
   ].filter(Boolean);
   for (const path of paths) {
     try {
