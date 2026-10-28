@@ -31,7 +31,7 @@
         lang: 'dsh-notify.lang'
       };
 
-      var DEFAULT_VOLUME = 0.3;
+      var DEFAULT_VOLUME = 0.6;
 
       function flag(key, fallback) {
         try {
