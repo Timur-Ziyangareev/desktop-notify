@@ -81,7 +81,7 @@
 
       var TEXT = {
         ru: {
-          done: 'Готово',
+          done: 'DEEPSEEK ЗАВЕРШИЛ ЗАПРОС',
           doneBody: 'Запрос выполнен',
           approval: 'Нужны права',
           question: 'Нужен ответ',
@@ -92,7 +92,7 @@
           session: 'Сессия'
         },
         en: {
-          done: 'Done',
+          done: 'DEEPSEEK FINISHED THE REQUEST',
           doneBody: 'The request has finished',
           approval: 'Permission needed',
           question: 'Answer needed',

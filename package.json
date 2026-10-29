@@ -1,6 +1,6 @@
 {
   "name": "@local/desktop-notify",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "private": true,
   "type": "module",
   "description": "Desktop notifications with a sound cue when a DSH turn finishes, needs the user, or fails.",

@@ -12,7 +12,7 @@ sound pattern:
 
 | Moment | Toast | Sound |
 |---|---|---|
-| The request finished | “Done” + the session title | rising two-note chime |
+| The request finished | “DEEPSEEK FINISHED THE REQUEST” + the session title | rising two-note chime |
 | The agent needs the user: a permission request, a question, a plan review | “Permission needed” / “Answer needed” / “Plan review needed” + the tool or question | three bright beeps |
 | The request failed | “Error” + the failure text | low descending pair |
 
@@ -85,7 +85,7 @@ feeds and adds only the compositor speaker as UI:
   the question card, or the plan review that is waiting for an answer.
 
 `api-session/status` also fires for subagent sessions; those are skipped unless
-`dsh-notify.subagents` is on. A turn that failed suppresses the “Done” toast for
+`dsh-notify.subagents` is on. A turn that failed suppresses the finish toast for
 six seconds, so a failure is announced once, not twice.
 
 ## Phone notifications
@@ -139,7 +139,7 @@ node test/run.mjs
 
 | Когда | Уведомление | Звук |
 |---|---|---|
-| Запрос выполнен | «Готово» + название сессии | восходящий двухнотный сигнал |
+| Запрос выполнен | «DEEPSEEK ЗАВЕРШИЛ ЗАПРОС» + название сессии | восходящий двухнотный сигнал |
 | Нужны права / ответ / подтверждение плана | «Нужны права», «Нужен ответ», «Нужно подтвердить план» + инструмент или вопрос | три высоких сигнала |
 | Ошибка при запросе | «Ошибка» + текст ошибки | низкий нисходящий сигнал |
 

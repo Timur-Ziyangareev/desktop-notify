@@ -207,7 +207,7 @@
     core.remote.emit('api-session/status', 's1', true);
     core.remote.emit('api-session/status', 's1', false);
     check('finished turn raises one toast', FakeNotification.created.length === 1, 'created=' + FakeNotification.created.length);
-    check('finished toast says done', lastTitle() === 'Готово', lastTitle());
+    check('finished toast says done', lastTitle() === 'DEEPSEEK ЗАВЕРШИЛ ЗАПРОС', lastTitle());
     check('finished toast names the session', lastBody() === 'Правка макета', lastBody());
     check('finished toast is silent (own cue)', FakeNotification.created[0] && FakeNotification.created[0].silent === true);
     check('finished cue scheduled two notes', sinceOscillators() === 2, 'oscillators=' + sinceOscillators());
@@ -273,7 +273,7 @@
     core.remote.emit('api-session/status', 's1', true);
     core.remote.emit('api-session/error', 's1', 'boom');
     core.remote.emit('api-session/status', 's1', false);
-    var done = FakeNotification.created.filter(function (item) { return item.title === 'Готово'; });
+    var done = FakeNotification.created.filter(function (item) { return item.title === 'DEEPSEEK ЗАВЕРШИЛ ЗАПРОС'; });
     check('failed turn skips the done toast', done.length === 0, 'done=' + done.length);
 
     /* 9. sound can be turned off without losing the toast */
