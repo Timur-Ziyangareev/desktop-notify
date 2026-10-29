@@ -1,6 +1,6 @@
 {
   "name": "@local/desktop-notify",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "private": true,
   "type": "module",
   "description": "Desktop notifications with a sound cue when a DSH turn finishes, needs the user, or fails.",
@@ -25,6 +25,7 @@
   "files": [
     "index.js",
     "client.js",
+    "lib/*.js",
     "cordis.patch.yml",
     "README.md",
     "LICENSE"

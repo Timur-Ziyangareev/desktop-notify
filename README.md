@@ -38,6 +38,8 @@ repository root:
 $dst = "$env:USERPROFILE\.dsh\profiles\desktop\node_modules\@local\desktop-notify"
 New-Item -ItemType Directory -Force $dst | Out-Null
 Copy-Item .\package.json, .\index.js, .\client.js, .\cordis.patch.yml, .\README.md $dst -Force
+New-Item -ItemType Directory -Force "$dst\lib" | Out-Null
+Copy-Item .\lib\push.js "$dst\lib" -Force
 ```
 
 Then add the dependency and the bundle to `~/.dsh/profiles/desktop/package.json`:
@@ -63,6 +65,7 @@ notification is due.
 | `dsh-notify.volume` | `2` | Requested level, `0`…`2`; above `1` the cue is soft-limited instead of digitally clipped |
 | `dsh-notify.subagents` | `0` | Also announce subagent sessions |
 | `dsh-notify.inApp` | `1` | In-page card when the OS toast is unavailable |
+| `dsh-notify.phone` | `1` | Send the same announcement to the phone |
 | `dsh-notify.lang` | browser | `ru` or `en` for the copy |
 
 Toggle from the DevTools console of the window:
@@ -73,8 +76,8 @@ localStorage.setItem('dsh-notify.sound', '0'); // silence, keep the toasts
 
 ## How it hooks in
 
-The plugin is headless: it registers no slot and renders nothing. It subscribes
-to three public client feeds:
+The notifications are headless: the plugin subscribes to three public client
+feeds and adds only the compositor speaker as UI:
 
 - `api-session/status` — `running` true → false is a finished turn;
 - `api-session/error` — the live failure outlet for a session;
@@ -84,6 +87,29 @@ to three public client feeds:
 `api-session/status` also fires for subagent sessions; those are skipped unless
 `dsh-notify.subagents` is on. A turn that failed suppresses the “Done” toast for
 six seconds, so a failure is announced once, not twice.
+
+## Phone notifications
+
+The same announcement goes to a phone over [ntfy](https://ntfy.sh): install the
+app, subscribe to one topic, and write the topic into a Host-side config. The
+Host sends the request, so no CORS and no third-party script in the page.
+
+```json
+// ~/.dsh/desktop-notify.json
+{
+  "ntfy": { "server": "https://ntfy.sh", "topic": "dsh-your-random-topic" },
+  "phone": true
+}
+```
+
+- Topic names are the only secret: pick something long and random, because
+  anyone who knows the topic can read it on the public server.
+- The phone copy stays quiet while the speaker is muted: it is published with
+  ntfy's minimum priority, so the message arrives without a sound.
+- `dsh-notify.phone` = `0` stops the phone copy while the desktop keeps working.
+- `phone: false` in the config does the same on the Host side.
+- The ntfy app can mute the topic itself, exactly like the phone side of any
+  messenger; the desktop toggle is a second switch, not a replacement.
 
 ## Tests
 
@@ -126,6 +152,29 @@ node test/run.mjs
 сдвинуты правее). Первый клик выключает звук — волны справа от динамика
 исчезают, а сам динамик зачёркивается; второй клик возвращает всё обратно.
 Уведомления при выключенном звуке продолжают приходить.
+
+### Уведомления на телефон
+
+Те же три события уходят на телефон через [ntfy](https://ntfy.sh): поставить
+приложение, подписаться на один топик, а топик вписать в конфиг на стороне Host
+(запрос отправляет Host, поэтому ни CORS, ни чужой скрипт на странице не нужны):
+
+```json
+// ~/.dsh/desktop-notify.json
+{
+  "ntfy": { "server": "https://ntfy.sh", "topic": "dsh-ваш-случайный-топик" },
+  "phone": true
+}
+```
+
+- Имя топика — единственный секрет: на публичном сервере его может прочитать
+  любой, кто его знает, поэтому имя должно быть длинным и случайным.
+- Пока динамик выключен, на телефон приходит тихое уведомление (ntfy получает
+  минимальный приоритет): сообщение есть, звука нет.
+- `dsh-notify.phone` = `0` отключает отправку на телефон, оставляя компьютер.
+- `phone: false` в конфиге делает то же самое на стороне Host.
+- В самом приложении ntfy топик тоже можно замьютить — это независимый
+  выключатель, кнопка на компьютере его не заменяет.
 
 ### Установка
 

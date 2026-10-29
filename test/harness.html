@@ -85,6 +85,13 @@
 (async function () {
   window.localStorage.clear();
 
+  /* The Host route that reaches the phone; recorded instead of called. */
+  var pushCalls = [];
+  window.fetch = function (url, options) {
+    pushCalls.push({ url: String(url), options: options });
+    return Promise.resolve({ ok: true, text: function () { return Promise.resolve(''); } });
+  };
+
   function rows() {
     return {
       's1': { sessionId: 's1', title: 'Правка макета', running: false, retainedBy: { mainView: 1 } },
@@ -381,7 +388,30 @@
     check('composer toggle renders a component', !!registered && typeof registered.component === 'function');
     uiCore.dispose();
 
-    /* 16. disposal detaches every subscription */
+    /* 16. the copy that goes to the phone */
+    pushCalls.length = 0;
+    core.remote.emit('api-session/error', 's1', 'phone test');
+    check('phone push fires with the notification', pushCalls.length === 1, 'calls=' + pushCalls.length);
+    check('phone push targets the host route', /^\/desktop-notify\/push\?/.test((pushCalls[0] || {}).url || ''),
+      (pushCalls[0] || {}).url || 'none');
+    check('phone push carries the message', /body=phone%20test/.test((pushCalls[0] || {}).url || ''));
+    check('audible cue sends a ringing push', ((pushCalls[0] || {}).url || '').indexOf('silent=1') === -1,
+      (pushCalls[0] || {}).url || '');
+
+    pushCalls.length = 0;
+    window.localStorage.setItem('dsh-notify.sound', '0');
+    core.remote.emit('api-session/error', 's1', 'quiet phone');
+    check('muted speaker sends a quiet push', /silent=1/.test((pushCalls[0] || {}).url || ''),
+      (pushCalls[0] || {}).url || '');
+    window.localStorage.removeItem('dsh-notify.sound');
+
+    pushCalls.length = 0;
+    window.localStorage.setItem('dsh-notify.phone', '0');
+    core.remote.emit('api-session/error', 's1', 'no phone');
+    check('phone switch stops the push', pushCalls.length === 0, 'calls=' + pushCalls.length);
+    window.localStorage.removeItem('dsh-notify.phone');
+
+    /* 17. disposal detaches every subscription */
     core.dispose();
     reset();
     core.remote.emit('api-session/error', 's1', 'after dispose');

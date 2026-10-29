@@ -38,6 +38,7 @@
         volume: 'dsh-notify.volume',
         subagents: 'dsh-notify.subagents',
         inApp: 'dsh-notify.inApp',
+        phone: 'dsh-notify.phone',
         lang: 'dsh-notify.lang'
       };
 
@@ -311,12 +312,27 @@
 
       function notify(kind, title, body, sessionId) {
         if (!flag(KEYS.enabled, true)) return;
+        var muted = !flag(KEYS.sound, true);
         sound(kind);
         var shown = osToast(title, body);
         if (!shown) inApp(title, body);
+        phonePush(title, body, muted);
         if (window.console && typeof window.console.debug === 'function') {
           window.console.debug('[desktop-notify]', kind, sessionId || '', title, body || '');
         }
+      }
+
+      /* The phone copy rides the Host route: it owns the ntfy topic and keeps the
+         request out of CORS. A muted speaker sends the same message quietly. */
+      function phonePush(title, body, muted) {
+        if (!flag(KEYS.phone, true)) return;
+        try {
+          var query = '/desktop-notify/push?title=' + encodeURIComponent(title)
+            + '&body=' + encodeURIComponent(String(body || ''))
+            + (muted ? '&silent=1' : '');
+          var request = window.fetch(query, { method: 'POST', keepalive: true });
+          if (request && typeof request.catch === 'function') request.catch(function () {});
+        } catch (error) { /* the Host route may be absent */ }
       }
 
       /* ------------------------------------------------------------------ *
