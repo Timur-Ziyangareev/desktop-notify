@@ -111,6 +111,30 @@ Host sends the request, so no CORS and no third-party script in the page.
 - The ntfy app can mute the topic itself, exactly like the phone side of any
   messenger; the desktop toggle is a second switch, not a replacement.
 
+## Token balance
+
+The balance widget already owns the API key and the CBR rates, so it publishes
+`llm-balance.snapshot` (`{ currency, amount, rub, at }`) after every successful
+refresh. This plugin only reads that snapshot — it never calls the provider —
+and announces one message when the rouble balance drops below the threshold:
+
+```
+ТОКЕНЫ ЗАКАНЧИВАЮТСЯ!!!
+Баланс 42,50 ₽ — ниже 50,00 ₽
+```
+
+- The threshold lives in the Host config, so it is tuned in one file instead of
+  the DevTools console: `"balance": { "thresholdRub": 50 }` in
+  `~/.dsh/desktop-notify.json`. The page receives it from
+  `GET /desktop-notify/config`.
+- One message per drop, not per minute: the alert latches until the balance is
+  back above the threshold, and repeats at most once per 24 hours while it stays
+  below.
+- A snapshot older than 15 minutes is ignored: the widget stopped refreshing, so
+  the number is stale.
+- `dsh-notify.balanceThreshold` in localStorage overrides the Host value for a
+  quick experiment.
+
 ## Tests
 
 `test/harness.html` runs the plugin against stubbed services in a browser:
@@ -175,6 +199,26 @@ node test/run.mjs
 - `phone: false` в конфиге делает то же самое на стороне Host.
 - В самом приложении ntfy топик тоже можно замьютить — это независимый
   выключатель, кнопка на компьютере его не заменяет.
+
+### Баланс токенов
+
+Виджет баланса уже держит API-ключ и курсы ЦБ, поэтому он публикует
+`llm-balance.snapshot` (`{ currency, amount, rub, at }`) после каждого успешного
+обновления. Этот плагин только читает снапшот — к провайдеру он не ходит — и
+один раз сообщает, когда баланс в рублях падает ниже порога:
+
+```
+ТОКЕНЫ ЗАКАНЧИВАЮТСЯ!!!
+Баланс 42,50 ₽ — ниже 50,00 ₽
+```
+
+- Порог задаётся в конфиге Host (один файл, без DevTools):
+  `"balance": { "thresholdRub": 50 }` в `~/.dsh/desktop-notify.json`;
+  страница получает его из `GET /desktop-notify/config`.
+- Одно сообщение на падение, а не каждую минуту: флаг держится, пока баланс не
+  вернётся выше порога; если он остаётся ниже — повтор не чаще раза в сутки.
+- Снапшот старше 15 минут игнорируется: значит виджет перестал обновляться.
+- `dsh-notify.balanceThreshold` в `localStorage` перекрывает значение из конфига.
 
 ### Установка
 

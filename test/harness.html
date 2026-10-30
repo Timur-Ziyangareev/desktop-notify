@@ -411,7 +411,38 @@
     check('phone switch stops the push', pushCalls.length === 0, 'calls=' + pushCalls.length);
     window.localStorage.removeItem('dsh-notify.phone');
 
-    /* 17. disposal detaches every subscription */
+    /* 17. token balance below the threshold */
+    function seedBalance(rub, ageMs) {
+      window.localStorage.setItem('llm-balance.snapshot', JSON.stringify({
+        currency: 'USD', amount: rub / 85, rub: rub, at: Date.now() - (ageMs || 0)
+      }));
+    }
+    reset();
+    pushCalls.length = 0;
+    window.localStorage.removeItem('dsh-notify.balanceAlert');
+    plugin._test.setThreshold(50);
+    seedBalance(42.5, 0);
+    check('low balance announces once', plugin._test.checkBalance() === true && FakeNotification.created.length === 1,
+      'created=' + FakeNotification.created.length);
+    check('low balance title', lastTitle() === 'ТОКЕНЫ ЗАКАНЧИВАЮТСЯ!!!', lastTitle());
+    check('low balance body names the amount', /42,50/.test(lastBody()) && /50,00/.test(lastBody()), lastBody());
+    check('low balance sends a phone copy', pushCalls.length === 1, 'calls=' + pushCalls.length);
+    check('second check stays quiet', plugin._test.checkBalance() === false && FakeNotification.created.length === 1,
+      'created=' + FakeNotification.created.length);
+
+    seedBalance(425, 0);
+    check('healthy balance clears the alert', plugin._test.checkBalance() === false);
+    seedBalance(34, 0);
+    check('a new drop speaks again', plugin._test.checkBalance() === true && FakeNotification.created.length === 2,
+      'created=' + FakeNotification.created.length);
+
+    seedBalance(8, 60 * 60 * 1000);
+    check('a stale snapshot is ignored', plugin._test.checkBalance() === false);
+
+    window.localStorage.removeItem('llm-balance.snapshot');
+    window.localStorage.removeItem('dsh-notify.balanceAlert');
+
+    /* 18. disposal detaches every subscription */
     core.dispose();
     reset();
     core.remote.emit('api-session/error', 's1', 'after dispose');

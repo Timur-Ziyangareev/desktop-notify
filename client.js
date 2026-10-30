@@ -39,6 +39,7 @@
         subagents: 'dsh-notify.subagents',
         inApp: 'dsh-notify.inApp',
         phone: 'dsh-notify.phone',
+        balance: 'dsh-notify.balanceThreshold',
         lang: 'dsh-notify.lang'
       };
 
@@ -332,6 +333,100 @@
             + (muted ? '&silent=1' : '');
           var request = window.fetch(query, { method: 'POST', keepalive: true });
           if (request && typeof request.catch === 'function') request.catch(function () {});
+        } catch (error) { /* the Host route may be absent */ }
+      }
+
+      /* ------------------------------------------------------------------ *
+       * Token balance: warn once when the account drops below the threshold
+       *
+       * The balance widget owns the API key and the CBR rates, so it publishes
+       * `llm-balance.snapshot`; this plugin only reads it and never calls the
+       * provider. The threshold comes from the Host config, with a localStorage
+       * override for quick tuning.
+       * ------------------------------------------------------------------ */
+
+      var SNAPSHOT_KEY = 'llm-balance.snapshot';
+      var ALERT_KEY = 'dsh-notify.balanceAlert';
+      var SNAPSHOT_FRESH_MS = 15 * 60 * 1000;
+      var ALERT_REPEAT_MS = 24 * 60 * 60 * 1000;
+      var balanceThreshold = 50;
+
+      function storedNumber(key) {
+        try {
+          var raw = window.localStorage.getItem(key);
+          if (raw === null) return null;
+          var value = Number(raw);
+          return isFinite(value) && value > 0 ? value : null;
+        } catch (error) {
+          return null;
+        }
+      }
+
+      function readSnapshot() {
+        try {
+          var raw = window.localStorage.getItem(SNAPSHOT_KEY);
+          if (!raw) return null;
+          var parsed = JSON.parse(raw);
+          if (!parsed || typeof parsed !== 'object') return null;
+          var at = Number(parsed.at);
+          if (!isFinite(at) || Date.now() - at > SNAPSHOT_FRESH_MS) return null;
+          var rub = Number(parsed.rub);
+          if (!isFinite(rub)) return null;
+          return { rub: rub, currency: parsed.currency, at: at };
+        } catch (error) {
+          return null;
+        }
+      }
+
+      function readAlert() {
+        try {
+          var raw = window.localStorage.getItem(ALERT_KEY);
+          var parsed = raw ? JSON.parse(raw) : null;
+          return parsed && typeof parsed === 'object' ? parsed : {};
+        } catch (error) {
+          return {};
+        }
+      }
+
+      function saveAlert(state) {
+        try { window.localStorage.setItem(ALERT_KEY, JSON.stringify(state)); } catch (error) { /* ignore */ }
+      }
+
+      function formatRub(value) {
+        return value.toFixed(2).replace('.', ',') + ' ₽';
+      }
+
+      /** One balance check; returns true when it announced something. */
+      function checkBalance() {
+        if (!flag(KEYS.enabled, true)) return false;
+        var snapshot = readSnapshot();
+        if (!snapshot) return false;
+        var threshold = storedNumber(KEYS.balance) || balanceThreshold;
+        var alert = readAlert();
+        if (snapshot.rub >= threshold) {
+          if (alert.below) saveAlert({});
+          return false;
+        }
+        var lastAt = Number(alert.at) || 0;
+        if (alert.below && Date.now() - lastAt < ALERT_REPEAT_MS) return false;
+        saveAlert({ below: true, at: Date.now(), rub: snapshot.rub, threshold: threshold });
+        notify('attention', 'ТОКЕНЫ ЗАКАНЧИВАЮТСЯ!!!',
+          'Баланс ' + formatRub(snapshot.rub) + ' — ниже ' + formatRub(threshold));
+        return true;
+      }
+
+      /** The Host config carries the threshold so it can be tuned without DevTools. */
+      function loadThreshold() {
+        try {
+          var request = window.fetch('/desktop-notify/config', { cache: 'no-store' });
+          if (!request || typeof request.then !== 'function') return;
+          request
+            .then(function (response) { return response && response.ok ? response.json() : null; })
+            .then(function (body) {
+              var value = body && body.balance ? Number(body.balance.thresholdRub) : NaN;
+              if (isFinite(value) && value > 0) balanceThreshold = value;
+            })
+            .catch(function () { /* keep the default or the override */ });
         } catch (error) { /* the Host route may be absent */ }
       }
 
@@ -645,6 +740,18 @@
           } catch (error) { /* no composer row in this composition */ }
         }
 
+        // Balance watch: the widget republishes on its own minute, so reading on
+        // the same minute is enough. The first read waits for the widget's fetch.
+        loadThreshold();
+        var balanceTimer = setInterval(function () { checkBalance(); }, 60 * 1000);
+        var thresholdTimer = setInterval(loadThreshold, 5 * 60 * 1000);
+        var firstBalanceCheck = setTimeout(function () { checkBalance(); }, 8000);
+        disposers.push(function () {
+          clearInterval(balanceTimer);
+          clearInterval(thresholdTimer);
+          clearTimeout(firstBalanceCheck);
+        });
+
         if (typeof ctx.effect === 'function') {
           ctx.effect(function () {
             return function () {
@@ -673,7 +780,10 @@
           clip: clip,
           interactionText: interactionText,
           icons: ICONS,
-          keys: KEYS
+          keys: KEYS,
+          checkBalance: checkBalance,
+          setThreshold: function (value) { balanceThreshold = Number(value) || 50; },
+          threshold: function () { return balanceThreshold; }
         }
       };
     }

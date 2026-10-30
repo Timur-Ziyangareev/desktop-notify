@@ -80,4 +80,19 @@ export function apply(ctx) {
       }
     },
   }), 'desktop-notify: phone push');
+
+  // Page-facing settings that live with the Host: the balance threshold is
+  // edited in one file instead of the DevTools console.
+  ctx.effect(() => ctx.webServer.register({
+    kind: 'exact',
+    path: '/desktop-notify/config',
+    handler: async (req, res) => {
+      const config = readConfig() || {};
+      const value = Number(config.balance && config.balance.thresholdRub);
+      send(res, 200, {
+        ok: true,
+        balance: { thresholdRub: Number.isFinite(value) && value > 0 ? value : 50 },
+      });
+    },
+  }), 'desktop-notify: config');
 }
